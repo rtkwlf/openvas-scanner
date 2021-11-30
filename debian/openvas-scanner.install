@@ -1,2 +1,2 @@
-openvassd.conf /usr/etc/openvas
+openvas.conf /usr/etc/openvas
 redis-openvas.conf /etc/redis

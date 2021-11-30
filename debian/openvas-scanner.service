@@ -8,7 +8,7 @@ Before=openvas-manager.service
 [Service]
 Type=forking
 PIDFile=/var/run/openvassd.pid
-ExecStart=/usr/sbin/openvassd --unix-socket=/var/run/openvassd.sock
+ExecStart=/usr/sbin/openvas
 KillMode=mixed
 Restart=always
 RestartSec=1
