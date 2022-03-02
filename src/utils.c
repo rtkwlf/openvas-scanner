@@ -115,7 +115,7 @@ store_file (struct scan_globals *globals, const char *file,
 
   size_t bytes = 0;
 
-  if (!file_hash && *file_hash == '\0')
+  if (!file_hash || *file_hash == '\0')
     return -1;
 
   origname = g_strdup (file_hash);
@@ -245,11 +245,10 @@ is_scanner_only_pref (const char *pref)
 {
   if (pref == NULL)
     return 0;
-  if (!strcmp (pref, "logfile") || !strcmp (pref, "config_file")
-      || !strcmp (pref, "plugins_folder")
+  if (!strcmp (pref, "config_file") || !strcmp (pref, "plugins_folder")
       || !strcmp (
-           pref,
-           "kb_location") // old name of db_address, ignore from old conf's
+        pref,
+        "kb_location") // old name of db_address, ignore from old conf's
       || !strcmp (pref, "db_address") || !strcmp (pref, "negot_timeout")
       || !strcmp (pref, "force_pubkey_auth")
       || !strcmp (pref, "log_whole_attack")

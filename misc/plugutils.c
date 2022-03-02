@@ -26,6 +26,7 @@
 #include "plugutils.h"
 
 #include "network.h" // for OPENVAS_ENCAPS_IP
+#include "support.h" // for g_memdup2 workaround
 
 #include <errno.h>               // for errno
 #include <gvm/base/hosts.h>      // for g_vhost_t
@@ -353,6 +354,7 @@ proto_post_wrapped (const char *oid, struct script_infos *desc, int port,
   const char *hostname = "";
   char *buffer, *data, port_s[16] = "general";
   char ip_str[INET6_ADDRSTRLEN];
+  GError *err = NULL;
   GString *action_str;
   gsize length;
   kb_t kb;
@@ -380,7 +382,15 @@ proto_post_wrapped (const char *oid, struct script_infos *desc, int port,
                             hostname ?: " ", port_s, proto, oid,
                             action_str->str, uri ?: "");
   /* Convert to UTF-8 before sending to Manager. */
-  data = g_convert (buffer, -1, "UTF-8", "ISO_8859-1", NULL, &length, NULL);
+  data = g_convert (buffer, -1, "UTF-8", "ISO_8859-1", NULL, &length, &err);
+  if (!data)
+    {
+      g_warning ("%s: Error converting to UTF-8: %s\nOriginal string: %s",
+                 __func__, err->message, buffer);
+      g_free (buffer);
+      g_string_free (action_str, TRUE);
+      return;
+    }
   kb = plug_get_results_kb (desc);
   kb_item_push_str (kb, "internal/results", data);
   g_free (data);
@@ -810,9 +820,9 @@ plug_get_key (struct script_infos *args, char *name, int *type, size_t *len,
   if (kb == NULL)
     return NULL;
 
-  if (single && *type != KB_TYPE_INT)
+  if (single && type != NULL && *type != KB_TYPE_INT)
     res = kb_item_get_single (kb, name, KB_TYPE_UNSPEC);
-  else if (*type == KB_TYPE_INT)
+  else if (type != NULL && *type == KB_TYPE_INT)
     res = kb_item_get_single (kb, name, KB_TYPE_INT);
   else
     res = kb_item_get_all (kb, name);
@@ -827,7 +837,7 @@ plug_get_key (struct script_infos *args, char *name, int *type, size_t *len,
         {
           if (type != NULL)
             *type = KB_TYPE_INT;
-          ret = g_memdup (&res->v_int, sizeof (res->v_int));
+          ret = g_memdup2 (&res->v_int, sizeof (res->v_int));
         }
       else
         {
@@ -835,7 +845,9 @@ plug_get_key (struct script_infos *args, char *name, int *type, size_t *len,
             *type = KB_TYPE_STR;
           if (len)
             *len = res->len;
-          ret = g_memdup (res->v_str, res->len + 1);
+
+          ret = g_malloc0 (res->len + 1);
+          memcpy (ret, res->v_str, res->len + 1);
         }
       kb_item_free (res);
       return ret;
@@ -857,7 +869,7 @@ plug_get_key (struct script_infos *args, char *name, int *type, size_t *len,
             {
               if (type != NULL)
                 *type = KB_TYPE_INT;
-              ret = g_memdup (&res->v_int, sizeof (res->v_int));
+              ret = g_memdup2 (&res->v_int, sizeof (res->v_int));
             }
           else
             {
@@ -865,7 +877,9 @@ plug_get_key (struct script_infos *args, char *name, int *type, size_t *len,
                 *type = KB_TYPE_STR;
               if (len)
                 *len = res->len;
-              ret = g_memdup (res->v_str, res->len + 1);
+
+              ret = g_malloc0 (res->len + 1);
+              memcpy (ret, res->v_str, res->len + 1);
             }
           kb_item_free (res_list);
           return ret;

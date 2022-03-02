@@ -24,6 +24,7 @@
 #include "support.h"
 
 #include <arpa/inet.h>
+#include <errno.h>
 #include <gvm/base/logging.h>
 #include <gvm/base/networking.h>
 #include <ifaddrs.h>
@@ -868,7 +869,7 @@ v6_routethrough (struct in6_addr *dest, struct in6_addr *source)
   int numinterfaces = 0;
   static int numroutes = 0;
   struct in6_addr mask;
-  struct in6_addr network;
+  struct in6_addr network = {0};
   struct in6_addr src;
   long best_match = -1;
 
@@ -1245,16 +1246,117 @@ routethrough (struct in_addr *dest, struct in_addr *source)
             }
         }
     }
+
   /* Set source */
   if (source)
     {
+      /* Source address is given */
       if (src.s_addr != INADDR_ANY)
         source->s_addr = src.s_addr;
-      else
+      /* Source address is INADDR_ANY and there is a good route */
+      else if (best_match != -1)
         source->s_addr = myroutes[best_match].dev->addr.s_addr;
+      /* No best route found and no default */
+      else
+        {
+          /* Assigned first route in the table */
+          if (myroutes[0].dev)
+            {
+              source->s_addr = myroutes[0].dev->addr.s_addr;
+              best_match = 0;
+            }
+          /* or any */
+          else
+            source->s_addr = INADDR_ANY;
+        }
     }
 
   if (best_match != -1)
     return myroutes[best_match].dev->name;
   return NULL;
+}
+
+/** @brief Given an IP address, determines which interface belongs to.
+ *
+ * @param local_ip IP address.
+ *
+ * @return Iface name if found, Null otherwise.
+ */
+char *
+get_iface_from_ip (const char *local_ip)
+{
+  char errbuf[PCAP_ERRBUF_SIZE];
+  pcap_if_t *alldevsp1 = NULL, *devs_aux = NULL;
+  char *if_name = NULL;
+
+  if (pcap_findalldevs (&alldevsp1, errbuf) == -1)
+    g_debug ("Error for pcap_findalldevs(): %s", errbuf);
+
+  devs_aux = alldevsp1;
+  while (devs_aux)
+    {
+      pcap_addr_t *addr_aux = NULL;
+
+      addr_aux = devs_aux->addresses;
+      while (addr_aux)
+        {
+          char buffer[INET6_ADDRSTRLEN];
+
+          if (((struct sockaddr *) addr_aux->addr)->sa_family == AF_INET)
+            inet_ntop (AF_INET,
+                       &(((struct sockaddr_in *) addr_aux->addr)->sin_addr),
+                       buffer, INET_ADDRSTRLEN);
+          else if (((struct sockaddr *) addr_aux->addr)->sa_family == AF_INET6)
+            inet_ntop (AF_INET6,
+                       &(((struct sockaddr_in6 *) addr_aux->addr)->sin6_addr),
+                       buffer, INET6_ADDRSTRLEN);
+
+          if (!g_strcmp0 (buffer, local_ip))
+            {
+              if_name = g_strdup (devs_aux->name);
+              break;
+            }
+          addr_aux = addr_aux->next;
+        }
+
+      if (if_name)
+        break;
+      devs_aux = devs_aux->next;
+    }
+  pcap_freealldevs (alldevsp1);
+  g_debug ("returning %s as device", if_name);
+
+  return if_name;
+}
+
+/** @brief Get the interface index depending on the target's IP
+ *
+ * @param[in] ipaddr The ip address of the target.
+ * @param[out] ifindex the index of the selected iface
+ *
+ * @return 0 on success, otherwise -1.
+ */
+int
+get_iface_index (struct in6_addr *ipaddr, int *ifindex)
+{
+  struct in6_addr src_addr;
+  char *if_name, *ip_address;
+
+  // We get the local address to use, with the remote address.
+  memset (&src_addr, '\0', sizeof (struct in6_addr));
+  v6_getsourceip (&src_addr, ipaddr);
+  ip_address = addr6_as_str (&src_addr);
+
+  // Once with the local ip address, we get the source iface name
+  if_name = get_iface_from_ip (ip_address);
+  g_free (ip_address);
+  if (!if_name)
+    {
+      g_debug ("%s: Missing interface name", __func__);
+      return -1;
+    }
+
+  *ifindex = if_nametoindex (if_name);
+
+  return 0;
 }

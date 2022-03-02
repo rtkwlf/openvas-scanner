@@ -1,5 +1,4 @@
-/* Portions Copyright (C) 2009-2021 Greenbone Networks GmbH
- * Based on work Copyright (C) 1998 - 2007 Tenable Network Security, Inc.
+/* Copyright (C) 2021 Greenbone Networks GmbH
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
@@ -19,45 +18,28 @@
  */
 
 /**
- * @file pcap_openvas.h
- * @brief Header file for module pcap.
+ * @file nasl_frame_forgery.h
+ * @brief Header file for module nasl_frame_forgery.
  */
 
-#ifndef OPENVAS_PCAP_H
-#define OPENVAS_PCAP_H
+#ifndef NASL_FRAME_FORGERY_H
+#define NASL_FRAME_FORGERY_H
 
-#include <arpa/inet.h>
-#include <pcap.h>
-#include <sys/param.h>
-#ifdef __FreeBSD__
-#include <netinet/in.h>
-#endif
+#include "nasl_lex_ctxt.h"
 
-int
-v6_is_local_ip (struct in6_addr *);
+tree_cell *
+nasl_send_arp_request (lex_ctxt *);
 
-int
-islocalhost (struct in_addr *);
+tree_cell *
+nasl_get_local_mac_address_from_ip (lex_ctxt *);
 
-int
-v6_islocalhost (struct in6_addr *);
+tree_cell *
+nasl_forge_frame (lex_ctxt *);
 
-int
-get_datalink_size (int);
+tree_cell *
+nasl_send_frame (lex_ctxt *);
 
-char *
-routethrough (struct in_addr *, struct in_addr *);
+tree_cell *
+nasl_dump_frame (lex_ctxt *);
 
-char *
-v6_routethrough (struct in6_addr *, struct in6_addr *);
-
-int
-v6_getsourceip (struct in6_addr *, struct in6_addr *);
-
-char *
-get_iface_from_ip (const char *);
-
-int
-get_iface_index (struct in6_addr *, int *);
-
-#endif
+#endif // NASL_FRAME_FORGERY_H

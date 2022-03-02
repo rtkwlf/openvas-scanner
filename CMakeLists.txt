@@ -22,7 +22,7 @@ message ("-- Configuring the Scanner...")
 
 # VERSION: Always include major, minor and patch level.
 project (openvas
-  VERSION 21.4.0
+  VERSION 21.4.4
   LANGUAGES C)
 
 if (POLICY CMP0005)
@@ -113,7 +113,7 @@ if (SYSCONF_INSTALL_DIR)
 endif (SYSCONF_INSTALL_DIR)
 
 if (NOT SYSCONFDIR)
-  set (SYSCONFDIR "${CMAKE_INSTALL_PREFIX}/etc")
+  set (SYSCONFDIR "/etc")
 endif (NOT SYSCONFDIR)
 
 if (NOT EXEC_PREFIX)
@@ -143,7 +143,7 @@ if (NOT LIBDIR)
 endif (NOT LIBDIR)
 
 if (NOT LOCALSTATEDIR)
-  set (LOCALSTATEDIR "${CMAKE_INSTALL_PREFIX}/var")
+  set (LOCALSTATEDIR "/var")
 endif (NOT LOCALSTATEDIR)
 
 if (NOT DATADIR)
@@ -151,16 +151,17 @@ if (NOT DATADIR)
 endif (NOT DATADIR)
 
 if (NOT OPENVAS_RUN_DIR)
-  set (OPENVAS_RUN_DIR "${LOCALSTATEDIR}/run")
+  set (OPENVAS_RUN_DIR "/run/ospd")
 endif (NOT OPENVAS_RUN_DIR)
-
-if (NOT OPENVAS_FEED_LOCK_PATH)
-  set (OPENVAS_FEED_LOCK_PATH "${OPENVAS_RUN_DIR}/feed-update.lock")
-endif (NOT OPENVAS_FEED_LOCK_PATH)
-add_definitions (-DOPENVAS_FEED_LOCK_PATH="${OPENVAS_FEED_LOCK_PATH}")
 
 set (OPENVAS_DATA_DIR    "${DATADIR}/openvas")
 set (OPENVAS_STATE_DIR   "${LOCALSTATEDIR}/lib/openvas")
+
+if (NOT OPENVAS_FEED_LOCK_PATH)
+  set (OPENVAS_FEED_LOCK_PATH "${OPENVAS_STATE_DIR}/feed-update.lock")
+endif (NOT OPENVAS_FEED_LOCK_PATH)
+add_definitions (-DOPENVAS_FEED_LOCK_PATH="${OPENVAS_FEED_LOCK_PATH}")
+
 if (NOT GVM_LOG_DIR)
 	set (GVM_LOG_DIR         "${LOCALSTATEDIR}/log/gvm")
 endif (NOT GVM_LOG_DIR)

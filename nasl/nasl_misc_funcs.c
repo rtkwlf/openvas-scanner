@@ -194,7 +194,8 @@ nasl_telnet_init (lex_ctxt *lexic)
     n += n2;
   retc = alloc_typed_cell (CONST_DATA);
   retc->size = n;
-  retc->x.str_val = g_memdup (buffer, n + 1);
+  retc->x.str_val = g_malloc0 (n + 1);
+  memcpy (retc->x.str_val, buffer, n + 1);
 #undef iac
 #undef data
 #undef option
@@ -628,7 +629,10 @@ nasl_sort_array (lex_ctxt *lexic)
   if (retc != NULL)
     {
       a = retc->x.ref_val;
-      qsort (a->num_elt, a->max_idx, sizeof (a->num_elt[0]), var_cmp);
+      if (a->num_elt != NULL)
+        {
+          qsort (a->num_elt, a->max_idx, sizeof (a->num_elt[0]), var_cmp);
+        }
     }
   mylexic = NULL;
   return retc;

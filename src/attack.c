@@ -56,7 +56,6 @@
 #include <unistd.h>   /* for close() */
 
 #define ERR_HOST_DEAD -1
-#define ERR_CANT_FORK -2
 
 #define MAX_FORK_RETRIES 10
 /**
@@ -346,13 +345,14 @@ check_new_vhosts (void)
  * Does not launch a plugin twice if !save_kb_replay.
  *
  * @return ERR_HOST_DEAD if host died, ERR_CANT_FORK if forking failed,
- *         0 otherwise.
+ *         ERR_NO_FREE_SLOT if the process table is full, 0 otherwise.
  */
 static int
 launch_plugin (struct scan_globals *globals, struct scheduler_plugin *plugin,
                struct in6_addr *ip, GSList *vhosts, kb_t kb, kb_t main_kb)
 {
-  int optimize = prefs_get_bool ("optimize_test"), pid, ret = 0;
+  int optimize = prefs_get_bool ("optimize_test");
+  int launch_error, pid, ret = 0;
   char *oid, *name, *error = NULL, ip_str[INET6_ADDRSTRLEN];
   nvti_t *nvti;
 
@@ -428,11 +428,13 @@ launch_plugin (struct scan_globals *globals, struct scheduler_plugin *plugin,
 
   /* Update vhosts list and start the plugin */
   check_new_vhosts ();
-  pid = plugin_launch (globals, plugin, ip, vhosts, kb, main_kb, nvti);
-  if (pid < 0)
+  launch_error = 0;
+  pid = plugin_launch (globals, plugin, ip, vhosts, kb, main_kb, nvti,
+                       &launch_error);
+  if (launch_error == ERR_NO_FREE_SLOT || launch_error == ERR_CANT_FORK)
     {
       plugin->running_state = PLUGIN_STATUS_UNRUN;
-      ret = ERR_CANT_FORK;
+      ret = launch_error;
       goto finish_launch_plugin;
     }
 
@@ -519,19 +521,33 @@ attack_host (struct scan_globals *globals, struct in6_addr *ip, GSList *vhosts,
                   kb_item_push_str (main_kb, "internal/results", buffer);
                   goto host_died;
                 }
+              else if (e == ERR_NO_FREE_SLOT)
+                {
+                  if (forks_retry < MAX_FORK_RETRIES)
+                    {
+                      forks_retry++;
+                      g_warning ("Launch failed for %s. No free slot available "
+                                 "in the internal process table for starting a "
+                                 "plugin.",
+                                 plugin->oid);
+                      fork_sleep (forks_retry);
+                      goto again;
+                    }
+                }
               else if (e == ERR_CANT_FORK)
                 {
                   if (forks_retry < MAX_FORK_RETRIES)
                     {
                       forks_retry++;
-                      g_debug ("fork() failed - sleeping %d seconds (%s)",
-                               forks_retry, strerror (errno));
+                      g_warning (
+                        "fork() failed for %s - sleeping %d seconds (%s)",
+                        plugin->oid, forks_retry, strerror (errno));
                       fork_sleep (forks_retry);
                       goto again;
                     }
                   else
                     {
-                      g_debug ("fork() failed too many times - aborting");
+                      g_warning ("fork() failed too many times - aborting");
                       goto host_died;
                     }
                 }
@@ -565,7 +581,7 @@ attack_host (struct scan_globals *globals, struct in6_addr *ip, GSList *vhosts,
 
 host_died:
   if (all_plugs_launched == 0 && !scan_is_stopped ())
-    g_message ("Vulnerability scan %s started for host %s: not all plugins "
+    g_message ("Vulnerability scan %s for host %s: not all plugins "
                "were launched",
                globals->scan_id, ip_str);
   pluginlaunch_stop ();
@@ -625,6 +641,41 @@ vhosts_to_str (GSList *list)
       list = list->next;
     }
   return g_string_free (string, FALSE);
+}
+
+/**
+ * @brief Check if any deprecated prefs are in pref table and print warning.
+ */
+static void
+check_deprecated_prefs ()
+{
+  const gchar *source_iface = prefs_get ("source_iface");
+  const gchar *ifaces_allow = prefs_get ("ifaces_allow");
+  const gchar *ifaces_deny = prefs_get ("ifaces_deny");
+  const gchar *sys_ifaces_allow = prefs_get ("sys_ifaces_allow");
+  const gchar *sys_ifaces_deny = prefs_get ("sys_ifaces_deny");
+
+  if (source_iface || ifaces_allow || ifaces_deny || sys_ifaces_allow
+      || sys_ifaces_deny)
+    {
+      kb_t main_kb = NULL;
+      gchar *msg = NULL;
+
+      msg = g_strdup_printf (
+        "The following provided settings are deprecated and will be ignored "
+        "starting with the upcoming release 21.10: %s%s%s%s%s",
+        source_iface ? "source_iface (task setting) " : "",
+        ifaces_allow ? "ifaces_allow (user setting) " : "",
+        ifaces_deny ? "ifaces_deny (user setting) " : "",
+        sys_ifaces_allow ? "sys_ifaces_allow (scanner only setting) " : "",
+        sys_ifaces_deny ? "sys_ifaces_deny (scanner only setting)" : "");
+      g_warning ("%s: %s", __func__, msg);
+
+      connect_main_kb (&main_kb);
+      message_to_client (main_kb, msg, NULL, NULL, "ERRMSG");
+      kb_lnk_reset (main_kb);
+      g_free (msg);
+    }
 }
 
 /*
@@ -740,13 +791,27 @@ attack_start (struct attack_start_args *args)
 }
 
 static void
-apply_hosts_preferences (gvm_hosts_t *hosts)
+apply_hosts_excluded (gvm_hosts_t *hosts)
 {
-  const char *ordering = prefs_get ("hosts_ordering"),
-             *exclude_hosts = prefs_get ("exclude_hosts");
+  const char *exclude_hosts = prefs_get ("exclude_hosts");
 
-  if (hosts == NULL)
-    return;
+  /* Exclude hosts ? */
+  if (exclude_hosts)
+    {
+      /* Exclude hosts, resolving hostnames. */
+      int ret = gvm_hosts_exclude (hosts, exclude_hosts);
+
+      if (ret > 0)
+        g_message ("exclude_hosts: Skipped %d host(s).", ret);
+      if (ret < 0)
+        g_message ("exclude_hosts: Error.");
+    }
+}
+
+static void
+apply_hosts_preferences_ordering (gvm_hosts_t *hosts)
+{
+  const char *ordering = prefs_get ("hosts_ordering");
 
   /* Hosts ordering strategy: sequential, random, reversed... */
   if (ordering)
@@ -764,19 +829,11 @@ apply_hosts_preferences (gvm_hosts_t *hosts)
     }
   else
     g_debug ("hosts_ordering: Sequential.");
+}
 
-  /* Exclude hosts ? */
-  if (exclude_hosts)
-    {
-      /* Exclude hosts, resolving hostnames. */
-      int ret = gvm_hosts_exclude (hosts, exclude_hosts);
-
-      if (ret > 0)
-        g_message ("exclude_hosts: Skipped %d host(s).", ret);
-      if (ret < 0)
-        g_message ("exclude_hosts: Error.");
-    }
-
+static void
+apply_hosts_reverse_lookup_preferences (gvm_hosts_t *hosts)
+{
   /* Reverse-lookup unify ? */
   if (prefs_get_bool ("reverse_lookup_unify"))
     g_debug ("reverse_lookup_unify: Skipped %d host(s).",
@@ -1043,6 +1100,8 @@ attack_network (struct scan_globals *globals)
   GSList *unresolved;
   char buf[96];
 
+  check_deprecated_prefs ();
+
   gboolean test_alive_hosts_only = prefs_get_bool ("test_alive_hosts_only");
   gvm_hosts_t *alive_hosts_list = NULL;
   kb_t alive_hosts_kb = NULL;
@@ -1128,6 +1187,10 @@ attack_network (struct scan_globals *globals)
     }
   g_slist_free_full (unresolved, g_free);
 
+  /* Apply Hosts preferences. */
+  apply_hosts_preferences_ordering (hosts);
+  apply_hosts_reverse_lookup_preferences (hosts);
+
   /* Send the hosts count to the client, after removing duplicated and
    * unresolved hosts.*/
   sprintf (buf, "%d", gvm_hosts_count (hosts));
@@ -1135,8 +1198,7 @@ attack_network (struct scan_globals *globals)
   message_to_client (main_kb, buf, NULL, NULL, "HOSTS_COUNT");
   kb_lnk_reset (main_kb);
 
-  /* Apply Hosts preferences. */
-  apply_hosts_preferences (hosts);
+  apply_hosts_excluded (hosts);
 
   /* Don't start if the provided interface is unauthorized. */
   if (apply_source_iface_preference () != 0)
@@ -1160,6 +1222,7 @@ attack_network (struct scan_globals *globals)
       gboolean ad_finished = FALSE;
       int err;
       pthread_t tid;
+      struct in6_addr tmpaddr;
 
       /* Reset the iterator. */
       hosts->current = 0;
@@ -1178,11 +1241,16 @@ attack_network (struct scan_globals *globals)
         {
           fork_sleep (1);
         }
-      if (host)
-        g_debug ("%s: Get first host to test from Queue. This host is used for "
-                 "initialising the alive_hosts_list.",
-                 __func__);
 
+      if (gvm_host_get_addr6 (host, &tmpaddr) == 0)
+        host = gvm_host_find_in_hosts (host, &tmpaddr, hosts);
+      if (host)
+        {
+          g_debug (
+            "%s: Get first host to test from Queue. This host is used for "
+            "initialising the alive_hosts_list.",
+            __func__);
+        }
       alive_hosts_list = gvm_hosts_new (gvm_host_value_str (host));
     }
 
@@ -1255,8 +1323,8 @@ attack_network (struct scan_globals *globals)
           if (fork_retries > MAX_FORK_RETRIES)
             {
               /* Forking failed - we go to the wait queue. */
-              g_debug ("fork() failed - %s. %s won't be tested",
-                       strerror (errno), host_str);
+              g_warning ("fork() failed - %s. %s won't be tested",
+                         strerror (errno), host_str);
               g_free (host_str);
               goto stop;
             }
@@ -1271,6 +1339,9 @@ attack_network (struct scan_globals *globals)
 
       if (test_alive_hosts_only)
         {
+          struct in6_addr tmpaddr;
+          gvm_host_t *buf;
+
           while (1)
             {
               /* Boolean signalling if alive detection finished. */
@@ -1312,8 +1383,17 @@ attack_network (struct scan_globals *globals)
               else
                 break;
             }
+
+          if (host && gvm_host_get_addr6 (host, &tmpaddr) == 0)
+            {
+              buf = host;
+              host = gvm_host_find_in_hosts (host, &tmpaddr, hosts);
+              gvm_host_free (buf);
+              buf = NULL;
+            }
+
           if (host)
-            gvm_hosts_add (alive_hosts_list, host);
+            gvm_hosts_add (alive_hosts_list, gvm_duplicate_host (host));
           else
             g_debug ("%s: got NULL host, stop/finish scan", __func__);
         }
@@ -1379,7 +1459,7 @@ stop:
                gvm_hosts_count (hosts));
 
   gvm_hosts_free (hosts);
-  if (test_alive_hosts_only)
+  if (alive_hosts_list)
     gvm_hosts_free (alive_hosts_list);
 
   set_scan_status ("finished");

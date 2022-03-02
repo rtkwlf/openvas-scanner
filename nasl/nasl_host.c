@@ -41,10 +41,13 @@
 #include <arpa/inet.h> /* for inet_aton */
 #include <gvm/base/networking.h>
 #include <gvm/util/kb.h>
+#include <net/if.h>
+#include <net/if_arp.h>
 #include <netdb.h>      /* for gethostbyaddr */
 #include <netinet/in.h> /* for in_addr */
 #include <string.h>     /* for strlen */
-#include <unistd.h>     /* for gethostname */
+#include <sys/ioctl.h>
+#include <unistd.h> /* for gethostname */
 
 tree_cell *
 get_hostnames (lex_ctxt *lexic)

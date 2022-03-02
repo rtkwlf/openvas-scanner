@@ -30,6 +30,7 @@
 /*--------------------------------------------------------------------------*/
 #include "../misc/network.h"
 #include "../misc/plugutils.h" /* for plug_get_host_ip */
+#include "../misc/support.h"   /* for the g_memdup2 workaround */
 #include "exec.h"
 #include "nasl.h"
 #include "nasl_debug.h"
@@ -165,10 +166,10 @@ add_udp_data (struct script_infos *script_infos, int soc, char *data, int len)
 {
   GHashTable *udp_data = script_infos->udp_data;
   struct udp_record *data_record = g_malloc0 (sizeof (struct udp_record));
-  int *key = g_memdup (&soc, sizeof (int));
+  int *key = g_memdup2 (&soc, sizeof (int));
 
   data_record->len = len;
-  data_record->data = g_memdup ((gconstpointer) data, (guint) len);
+  data_record->data = g_memdup2 ((gconstpointer) data, (guint) len);
 
   if (udp_data == NULL)
     {
@@ -459,8 +460,8 @@ nasl_open_sock_tcp_bufsz (lex_ctxt *lexic, int bufsz)
   else if (transport == 0)
     soc = open_stream_auto_encaps_ext (script_infos, port, to, 1);
   else
-    soc =
-      open_stream_connection_ext (script_infos, port, transport, to, priority);
+    soc = open_stream_connection_ext (script_infos, port, transport, to,
+                                      priority, NO_PRIORITY_FLAGS);
   if (bufsz > 0 && soc >= 0)
     {
       if (stream_set_buffer (soc, bufsz) < 0)
@@ -613,6 +614,67 @@ nasl_socket_negotiate_ssl (lex_ctxt *lexic)
   ret = socket_negotiate_ssl (soc, transport, lexic->script_infos);
   if (ret < 0)
     return NULL;
+
+  retc = alloc_typed_cell (CONST_INT);
+  retc->x.i_val = ret;
+  return retc;
+}
+
+/**
+ * @brief Check if Secure Renegotiation is supported in the server side.
+ * @naslfn{socket_check_ssl_safe_renegotiation}
+ *
+ * @naslnparam
+ *
+ * - @a socket An already stablished ssl/tls session.
+ *
+ * @naslret An 1 if supported, 0 otherwise. Null or -1 on error.
+ *
+ **/
+tree_cell *
+nasl_socket_check_ssl_safe_renegotiation (lex_ctxt *lexic)
+{
+  int soc, ret;
+  tree_cell *retc;
+  soc = get_int_var_by_name (lexic, "socket", -1);
+  if (soc < 0)
+    {
+      nasl_perror (lexic, "socket_get_cert: Erroneous socket value %d\n", soc);
+      return NULL;
+    }
+  ret = socket_ssl_safe_renegotiation_status (soc);
+
+  retc = alloc_typed_cell (CONST_INT);
+  retc->x.i_val = ret;
+  return retc;
+}
+
+/**
+ * @brief Do a re-handshake of the TLS/SSL protocol.
+ *
+ * @naslfn{socket_ssl_do_handshake}
+ *
+ * @naslnparam
+ *
+ * - @a socket An already stablished TLS/SSL session.
+ *
+ * @naslret An 1 on success, less than 0 on handshake error.
+ *          Null on nasl error.
+ *
+ * @param[in] lexic Lexical context of NASL interpreter.
+ **/
+tree_cell *
+nasl_socket_ssl_do_handshake (lex_ctxt *lexic)
+{
+  int soc, ret;
+  tree_cell *retc;
+  soc = get_int_var_by_name (lexic, "socket", -1);
+  if (soc < 0)
+    {
+      nasl_perror (lexic, "socket_get_cert: Erroneous socket value %d\n", soc);
+      return NULL;
+    }
+  ret = socket_ssl_do_handshake (soc);
 
   retc = alloc_typed_cell (CONST_INT);
   retc->x.i_val = ret;
@@ -779,7 +841,7 @@ nasl_recv (lex_ctxt *lexic)
   if (new_len > 0)
     {
       tree_cell *retc = alloc_typed_cell (CONST_DATA);
-      retc->x.str_val = g_memdup (data, new_len);
+      retc->x.str_val = g_memdup2 (data, new_len);
       retc->size = new_len;
       g_free (data);
       return retc;
@@ -848,8 +910,7 @@ nasl_recv_line (lex_ctxt *lexic)
 
   retc = alloc_typed_cell (CONST_DATA);
   retc->size = new_len;
-  retc->x.str_val = g_memdup (data, new_len + 1);
-
+  retc->x.str_val = g_memdup2 (data, new_len + 1);
   g_free (data);
 
   return retc;
@@ -1374,12 +1435,12 @@ nasl_get_sock_info (lex_ctxt *lexic)
  * This function is used to retrieve and verify a certificate from an
  * active socket. It requires the NASL socket number.
  *
- * @nasluparam
+ * @naslnparam
  *
- * - A NASL socket.
+ * - @a socket A NASL socket.
  *
- * @naslret 0 in case of successfully verification. A positive integer in
- * case of verification error or NULL on other errors.
+ * @naslret 0 in case of successful verification. A positive integer in
+ * case of a verification error or NULL on other errors.
  *
  * @param[in] lexic  Lexical context of the NASL interpreter.
  *
@@ -1436,24 +1497,40 @@ nasl_socket_cert_verify (lex_ctxt *lexic)
   for (i = 0; i < cert_n; i++)
     {
       if (gnutls_x509_crt_init (&cert[i]) != GNUTLS_E_SUCCESS)
-        return NULL;
+        {
+          g_free (cert);
+          return NULL;
+        }
       if (gnutls_x509_crt_import (cert[i], &certs[i], GNUTLS_X509_FMT_DER)
           != GNUTLS_E_SUCCESS)
-        return NULL;
+        {
+          g_free (cert);
+          return NULL;
+        }
     }
 
   /* Init ca_list and load system CA trust list */
   if ((ret = gnutls_x509_trust_list_init (&ca_list, ca_list_size)) < 0)
-    return NULL;
+    {
+      g_free (cert);
+      return NULL;
+    }
   ret = gnutls_x509_trust_list_add_system_trust (ca_list, 0, 0);
   if (ret < 0)
-    return NULL;
+    {
+      g_free (cert);
+      return NULL;
+    }
 
   /* Certificate verification against a trust list*/
   if (gnutls_x509_trust_list_verify_crt (ca_list, cert, cert_n, 0, &voutput,
                                          NULL)
       != GNUTLS_E_SUCCESS)
-    return NULL;
+    {
+      g_free (cert);
+      return NULL;
+    }
+  g_free (cert);
 
   ret = voutput;
 

@@ -48,6 +48,7 @@
 #include <gvm/base/networking.h>
 #include <gvm/base/prefs.h> /* for prefs_get() */
 #include <gvm/util/kb.h>
+#include <libssh/sftp.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -503,7 +504,7 @@ do_nasl_ssh_disconnect (int tbl_slot)
  *
  * @nasluparam
  *
- * - An ssh session id.  A value of 0 is allowed and acts as a NOP.
+ * - An SSH session id.  A value of 0 is allowed and acts as a NOP.
  *
  * @naslret Nothing
  *
@@ -611,7 +612,7 @@ nasl_ssh_session_id_from_sock (lex_ctxt *lexic)
  *
  * @nasluparam
  *
- * - An ssh session id.
+ * - An SSH session id.
  *
  * @naslret An integer representing the socket or -1 on error.
  *
@@ -714,7 +715,7 @@ leave:
  *
  * @nasluparam
  *
- * - An ssh session id.
+ * - An SSH session id.
  *
  * @naslnparam
  *
@@ -800,7 +801,7 @@ nasl_ssh_set_login (lex_ctxt *lexic)
  *
  * @nasluparam
  *
- * - An ssh session id.
+ * - An SSH session id.
  *
  * @naslnparam
  *
@@ -854,7 +855,7 @@ nasl_ssh_userauth (lex_ctxt *lexic)
       privkeypass = kb_item_get_str (kb, "Secret/SSH/passphrase");
     }
 
-  /* Get the authentication methods onlye once per session.  */
+  /* Get the authentication methods only once per session.  */
   if (!session_table[tbl_slot].authmethods_valid)
     {
       if (!get_authmethods (tbl_slot))
@@ -999,7 +1000,7 @@ leave:
  *
  * @nasluparam
  *
- * - An ssh session id.
+ * - An SSH session id.
  *
  * @naslnparam
  *
@@ -1035,7 +1036,7 @@ nasl_ssh_login_interactive (lex_ctxt *lexic)
   if (!session_table[tbl_slot].user_set && !nasl_ssh_set_login (lexic))
     return NULL;
 
-  /* Get the authentication methods onlye once per session.  */
+  /* Get the authentication methods only once per session.  */
   if (!session_table[tbl_slot].authmethods_valid)
     {
       if (!get_authmethods (tbl_slot))
@@ -1111,7 +1112,7 @@ leave:
  *
  * @nasluparam
  *
- * - An ssh session id.
+ * - An SSH session id.
  *
  * @naslnparam
  *
@@ -1320,7 +1321,7 @@ exec_err:
  *
  * @nasluparam
  *
- * - An ssh session id.
+ * - An SSH session id.
  *
  * @naslnparam
  *
@@ -1348,7 +1349,8 @@ nasl_ssh_request_exec (lex_ctxt *lexic)
   int verbose;
   char *cmd;
   int rc;
-  GString *response, *compat_buf;
+  GString *response;
+  GString *compat_buf = NULL;
   size_t len = 0;
   tree_cell *retc;
   char *p;
@@ -1391,7 +1393,6 @@ nasl_ssh_request_exec (lex_ctxt *lexic)
   if (to_stderr < 0)
     to_stderr = 0;
 
-  memset (&compat_buf, '\0', sizeof (compat_buf));
   /* Allocate some space in advance.  Most commands won't output too
      much and thus 512 bytes (6 standard terminal lines) should often
      be sufficient.  */
@@ -1453,7 +1454,7 @@ nasl_ssh_request_exec (lex_ctxt *lexic)
  *
  * @nasluparam
  *
- * - An ssh session id.
+ * - An SSH session id.
  *
  * @naslret A data block on success or NULL on error.
  *
@@ -1503,7 +1504,7 @@ nasl_ssh_get_issue_banner (lex_ctxt *lexic)
  *
  * @nasluparam
  *
- * - An ssh session id.
+ * - An SSH session id.
  *
  * @naslret A data block on success or NULL on error.
  *
@@ -1544,7 +1545,7 @@ nasl_ssh_get_server_banner (lex_ctxt *lexic)
  *
  * @nasluparam
  *
- * - An ssh session id.
+ * - An SSH session id.
  *
  * @naslret A data block on success or NULL on error.
  *
@@ -1588,7 +1589,7 @@ nasl_ssh_get_host_key (lex_ctxt *lexic)
  *
  * @nasluparam
  *
- * - An ssh session id.
+ * - An SSH session id.
  *
  * @naslret A string on success or NULL on error.
  *
@@ -1649,23 +1650,30 @@ request_ssh_shell_alarm (int signal)
  * @brief Open a shell on an ssh channel.
  *
  * @param[in]   channel     SSH Channel.
+ * @param[in]   pty         1 interactive shell, 0 non-intercative shell
  *
  * @return 0 if success, -1 if error.
  */
 static int
-request_ssh_shell (ssh_channel channel)
+request_ssh_shell (ssh_channel channel, int pty)
 {
   assert (channel);
 
   /* Work-around for LibSSH calling poll() with an infinite timeout. */
   signal (SIGALRM, request_ssh_shell_alarm);
   alarm (30);
-  if (ssh_channel_request_pty (channel))
-    return -1;
-  if (ssh_channel_change_pty_size (channel, 80, 24))
-    return -1;
+
+  if (pty == 1)
+    {
+      if (ssh_channel_request_pty (channel))
+        return -1;
+
+      if (ssh_channel_change_pty_size (channel, 80, 24))
+        return -1;
+    }
   if (ssh_channel_request_shell (channel))
     return -1;
+
   alarm (0);
   signal (SIGALRM, _exit);
 
@@ -1678,7 +1686,11 @@ request_ssh_shell (ssh_channel channel)
  *
  * @nasluparam
  *
- * - An ssh session id.
+ * - An SSH session id.
+ *
+ * @naslnparam
+ *
+ * - @a pty To enable/disable the interactive shell. Default is 1 (interactive).
  *
  * @naslret An int on success or NULL on error.
  *
@@ -1689,12 +1701,14 @@ request_ssh_shell (ssh_channel channel)
 tree_cell *
 nasl_ssh_shell_open (lex_ctxt *lexic)
 {
-  int tbl_slot, session_id;
+  int tbl_slot, session_id, pty;
   ssh_channel channel;
   ssh_session session;
   tree_cell *retc;
 
   session_id = get_int_var_by_num (lexic, 0, -1);
+  pty = get_int_var_by_name (lexic, "pty", 1);
+
   if (!verify_session_id (session_id, "ssh_shell_open", &tbl_slot, lexic))
     return NULL;
   session = session_table[tbl_slot].session;
@@ -1711,7 +1725,7 @@ nasl_ssh_shell_open (lex_ctxt *lexic)
       return NULL;
     }
 
-  if (request_ssh_shell (channel))
+  if (request_ssh_shell (channel, pty))
     {
       g_message ("Function %s (calling internal function %s) called from %s: "
                  "request_ssh_shell: %s",
@@ -1727,6 +1741,53 @@ nasl_ssh_shell_open (lex_ctxt *lexic)
   retc = alloc_typed_cell (CONST_INT);
   retc->x.i_val = session_table[tbl_slot].session_id;
   return retc;
+}
+
+/**
+ * @brief read from an ssh channel until timeouts or there is no bytes left to
+ * read.
+ *
+ * @param[in]   channel     SSH Channel.
+ * @param[out]  response    Buffer to store response in.
+ * @param[in]   timeout     Timeout in milliseconds.
+ *
+ * @return 0 if success, -1 if error.
+ */
+static int
+read_ssh_blocking (ssh_channel channel, GString *response, int timeout)
+{
+  int rc;
+  char buffer[4096];
+
+  /* Read stderr */
+  do
+    {
+      if ((rc = ssh_channel_read_timeout (channel, buffer, sizeof (buffer), 1,
+                                          timeout))
+          > 0)
+        g_string_append_len (response, buffer, rc);
+
+      else if (rc == SSH_ERROR)
+        goto exec_err;
+    }
+  while (rc > 0 || rc == SSH_AGAIN);
+
+  /* Read stdout */
+  do
+    {
+      if ((rc = ssh_channel_read_timeout (channel, buffer, sizeof (buffer), 0,
+                                          timeout))
+          > 0)
+        g_string_append_len (response, buffer, rc);
+
+      else if (rc == SSH_ERROR)
+        goto exec_err;
+    }
+  while (rc > 0 || rc == SSH_AGAIN);
+  rc = SSH_OK;
+
+exec_err:
+  return rc;
 }
 
 /**
@@ -1765,7 +1826,12 @@ read_ssh_nonblocking (ssh_channel channel, GString *response)
  *
  * @nasluparam
  *
- * - An ssh session id.
+ * - An SSH session id.
+ *
+ * @naslparam timeout
+ *
+ * - Enable the blocking ssh read until it gives the timeout or there is no
+ * bytes left to read.
  *
  * @naslret A string on success or NULL on error.
  *
@@ -1780,6 +1846,7 @@ nasl_ssh_shell_read (lex_ctxt *lexic)
   ssh_channel channel;
   tree_cell *retc;
   GString *response;
+  int timeout;
 
   session_id = get_int_var_by_num (lexic, 0, -1);
   if (!verify_session_id (session_id, "ssh_shell_read", &tbl_slot, lexic))
@@ -1787,8 +1854,19 @@ nasl_ssh_shell_read (lex_ctxt *lexic)
   channel = session_table[tbl_slot].channel;
 
   response = g_string_new (NULL);
-  if (read_ssh_nonblocking (channel, response))
-    return NULL;
+
+  timeout = get_int_var_by_name (lexic, "timeout", 0);
+
+  if (timeout > 0)
+    {
+      if (read_ssh_blocking (channel, response, timeout))
+        return NULL;
+    }
+  else
+    {
+      if (read_ssh_nonblocking (channel, response))
+        return NULL;
+    }
   retc = alloc_typed_cell (CONST_DATA);
   retc->size = response->len;
   retc->x.str_val = g_string_free (response, FALSE);
@@ -1801,8 +1879,11 @@ nasl_ssh_shell_read (lex_ctxt *lexic)
  *
  * @nasluparam
  *
- * - An ssh session id.
- * - A string to write to shell.
+ * - An SSH session id.
+ *
+ * @naslnparam
+ *
+ * - @a cmd A string to write to shell.
  *
  * @naslret An integer: 0 on success, -1 on failure.
  *
@@ -1860,7 +1941,7 @@ write_ret:
  *
  * @nasluparam
  *
- * - An ssh session id.
+ * - An SSH session id.
  *
  * @param[in] lexic Lexical context of NASL interpreter.
  */
@@ -1879,4 +1960,73 @@ nasl_ssh_shell_close (lex_ctxt *lexic)
     }
 
   return NULL;
+}
+
+/*
+ * NASL SFTP
+ */
+
+/**
+ * @brief Check if the SFTP subsystem is enabled on the remote SSH server.
+ * @naslfn{sftp_enabled_check}
+ *
+ * @nasluparam
+ *
+ * - An SSH session id.
+ *
+ * @naslret An integer: 0 on success, -1 (SSH_ERROR) on Channel request
+ * subsystem failure. Greater than 0 means an error during SFTP init. NULL
+ * indicates a failure during session id verification.
+ *
+ * @param[in] lexic Lexical context of NASL interpreter.
+ */
+tree_cell *
+nasl_sftp_enabled_check (lex_ctxt *lexic)
+{
+  int tbl_slot, session_id;
+  tree_cell *retc;
+  sftp_session sftp;
+  ssh_session session;
+  int rc, verbose = 0;
+
+  session_id = get_int_var_by_num (lexic, 0, -1);
+  if (!verify_session_id (session_id, "sftp_enabled_check", &tbl_slot, lexic))
+    return NULL;
+
+  session = session_table[tbl_slot].session;
+  verbose = session_table[tbl_slot].verbose;
+
+  sftp = sftp_new (session);
+  if (sftp == NULL)
+    {
+      if (verbose)
+        g_message (
+          "Function %s (calling internal function %s) called from %s: %s",
+          nasl_get_function_name () ?: "script_main_function", __func__,
+          nasl_get_plugin_filename (),
+          ssh_get_error (session_table[tbl_slot].session));
+      rc = SSH_ERROR;
+      goto write_ret;
+    }
+
+  rc = sftp_init (sftp);
+  if (rc != SSH_OK)
+    {
+      if (verbose)
+        {
+          g_message ("Function %s (calling internal function %s) called from "
+                     "%s: %s. Code %d",
+                     nasl_get_function_name () ?: "script_main_function",
+                     __func__, nasl_get_plugin_filename (),
+                     ssh_get_error (session_table[tbl_slot].session),
+                     sftp_get_error (sftp));
+        }
+    }
+  sftp_free (sftp);
+
+write_ret:
+
+  retc = alloc_typed_cell (CONST_INT);
+  retc->x.i_val = rc;
+  return retc;
 }
