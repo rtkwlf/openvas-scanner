@@ -26,10 +26,7 @@
 typedef struct
 {
   int line_nb;
-  int always_signed; /**< If set disable signature check during scans and feed
-                        upload. */
-  int exec_descr; /**< Tell grammar that is a feed upload process or a running a
-                     scan process. */
+  int always_signed;
   int index;
   tree_cell *tree;
   char *buffer;

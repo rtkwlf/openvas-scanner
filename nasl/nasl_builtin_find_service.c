@@ -1606,25 +1606,8 @@ plugin_do_run (struct script_infos *desc, GSList *h, int test_ssl)
                 trp = OPENVAS_ENCAPS_IP;
               gettimeofday (&tv1, NULL);
               cnx = open_stream_connection (desc, port, trp, cnx_timeout);
-              if (cnx == -2 && test_ssl)
+              if (cnx < 0 && test_ssl)
                 {
-                  unsigned int flags = INSECURE_DH_PRIME_BITS;
-
-                  gettimeofday (&tv1, NULL);
-                  cnx = open_stream_connection_ext (
-                    desc, port, trp, cnx_timeout, "NORMAL:+ARCFOUR-128:%COMPAT",
-                    flags);
-                }
-              else if (cnx < 0 && test_ssl)
-                {
-                  if (cnx == -3)
-                    {
-                      host_fqdn = plug_get_host_fqdn (desc);
-                      g_message ("%s: A TLS fatal alert has been received "
-                                 "during the handshake with %s:%d",
-                                 __func__, host_fqdn, port);
-                      g_free (host_fqdn);
-                    }
                   trp = OPENVAS_ENCAPS_IP;
                   gettimeofday (&tv1, NULL);
                   cnx = open_stream_connection (desc, port, trp, cnx_timeout);
@@ -1950,8 +1933,9 @@ plugin_do_run (struct script_infos *desc, GSList *h, int test_ssl)
                                  buffer,
                                  "^.x{3}\n[0-9.]+ [0-9a-z]+@[0-9a-z]+ release")
                                || regex_match (
-                                 buffer, "^.x{3}\n[0-9.]+-(id[0-9]+-)?release"
-                                         " \\([0-9a-z-]+\\)")))
+                                    buffer,
+                                    "^.x{3}\n[0-9.]+-(id[0-9]+-)?release"
+                                    " \\([0-9a-z-]+\\)")))
                     mark_sphinxql (desc, port);
                   else if (line[0] != '\0'
                            && ((strncmp (buffer + 1, "host '", 6) == 0)
@@ -2041,8 +2025,8 @@ plugin_do_run (struct script_infos *desc, GSList *h, int test_ssl)
                             && strstr (buffer, "error.host\t1") != NULL)
                            || (buffer[0] == '3'
                                && strstr (
-                                 buffer,
-                                 "That item is not currently available")))
+                                    buffer,
+                                    "That item is not currently available")))
                     mark_gopher_server (desc, port);
                   else if (strstr (buffer,
                                    "www-authenticate: basic realm=\"swat\""))

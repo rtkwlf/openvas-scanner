@@ -60,24 +60,19 @@ get_DIS_from_filename (const gchar *filename)
  * @brief Process a file through the linter
  * @param filepath the path of the file to be processed
  * @param mode,script_args The parameters to be given to the linter
- * @return Number of errors in script
+ * @return TRUE if the file contains error(s)
  */
-static int
+static gboolean
 process_file (const gchar *filepath, int mode, struct script_infos *script_args)
 {
-  int ret;
-
   g_debug ("Processing %s", filepath);
   script_args->name = (char *) filepath;
-  ret = exec_nasl_script (script_args, mode);
-  if (ret != 0)
+  if (exec_nasl_script (script_args, mode) < 0)
     {
       g_print ("Error while processing %s.\n", filepath);
-      if (ret == -1)
-        return 1;
-      return ret;
+      return TRUE;
     }
-  return 0;
+  return FALSE;
 }
 
 /**
@@ -85,7 +80,7 @@ process_file (const gchar *filepath, int mode, struct script_infos *script_args)
  * @param list_file the path to a text file containing path to the files to
  *        process, one per line
  * @param mode,script_args Parameters for the linter
- * @return The amount of errors found in the given scripts
+ * @return The amount of scripts that contain errors
  */
 static int
 process_file_list (const gchar *list_file, int mode,
@@ -110,7 +105,8 @@ process_file_list (const gchar *list_file, int mode,
       if (line == NULL)
         break;
 
-      err += process_file (line, mode, script_args);
+      if (process_file (line, mode, script_args))
+        err++;
 
       g_free (line);
     }
@@ -123,7 +119,7 @@ process_file_list (const gchar *list_file, int mode,
  * @brief Process each given files through the linter
  * @param files The path to the files to be processed
  * @param mode,script_args Parameters to be given to the linter
- * @return The amount of errors found in the given scripts
+ * @return The amount of script that contains errors
  */
 static int
 process_files (const gchar **files, int mode, struct script_infos *script_args)
@@ -132,7 +128,8 @@ process_files (const gchar **files, int mode, struct script_infos *script_args)
   int err = 0;
   while (files[n])
     {
-      err += process_file (files[n], mode, script_args);
+      if (process_file (files[n], mode, script_args))
+        err++;
       n++;
     }
   return err;
@@ -222,8 +219,5 @@ main (int argc, char **argv)
     err += process_files (nvt_files, mode, script_infos);
 
   g_print ("%d errors found\n", err);
-
-  g_free (script_infos);
-
   return err;
 }

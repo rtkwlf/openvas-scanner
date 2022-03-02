@@ -1380,7 +1380,7 @@ nasl_exec (lex_ctxt *lexic, tree_cell *st)
             }
 
           if (len2 == 0 || len1 < len2
-              || (p1 != NULL && (p = memmem (p1, len1, p2, len2)) == NULL))
+              || (p = memmem (p1, len1, p2, len2)) == NULL)
             {
               s3 = g_malloc0 (len1 + 1);
               memcpy (s3, p1, len1);
@@ -1618,8 +1618,7 @@ nasl_lint (lex_ctxt *, tree_cell *);
  *                          parse-only, always-signed, command-line, lint)
  *
  * @return 0 if the script was executed successfully, negative values if an
- * error occurred. Return number of errors if mode is NASL_LINT and no none
- * linting errors occurred.
+ * error occurred.
  */
 int
 exec_nasl_script (struct script_infos *script_infos, int mode)
@@ -1657,8 +1656,6 @@ exec_nasl_script (struct script_infos *script_infos, int mode)
   bzero (&ctx, sizeof (ctx));
   if (mode & NASL_ALWAYS_SIGNED)
     ctx.always_signed = 1;
-  if ((mode & NASL_EXEC_DESCR) != 0)
-    ctx.exec_descr = 1;
   if (nvticache_initialized ())
     ctx.kb = nvticache_get_kb ();
   else
@@ -1701,18 +1698,8 @@ exec_nasl_script (struct script_infos *script_infos, int mode)
   process_id = getpid ();
   if (mode & NASL_LINT)
     {
-      /* ret is set to the number of errors the linter finds.
-      ret will be overwritten with -1 if any errors occur in the steps
-      after linting so we do not break other behaviour dependent on a
-      negative return value when doing more than just linting. */
-      tree_cell *ret = nasl_lint (lexic, ctx.tree);
-      if (ret == NULL)
+      if (nasl_lint (lexic, ctx.tree) == NULL)
         err--;
-      else if (ret != FAKE_CELL && ret->x.i_val > 0)
-        {
-          err = ret->x.i_val;
-          g_free (ret);
-        }
     }
   else if (!(mode & NASL_EXEC_PARSE_ONLY))
     {

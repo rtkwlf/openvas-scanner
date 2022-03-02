@@ -25,6 +25,7 @@
 #include <glib.h>      /* for gfree */
 #include <netinet/ip.h>
 #include <pcap.h>
+#include <string.h> /* for bcopy */
 #include <sys/param.h>
 #ifdef __FreeBSD__
 #include <sys/socket.h>
@@ -94,77 +95,6 @@ init_capture_device (struct in_addr src, struct in_addr dest, char *filter)
   return ret;
 }
 
-/**
- * @brief Capture a link layer frame.
- *
- * @param[in] bpf bpf handler
- * @param[in] timeout the timeout
- * @param[out] sz size of the frame, -1 if no frame was received.
- * @param[in] dl_layer_only If the answer should include the payload.
- *
- * @return the link layer frame.
- */
-char *
-capture_next_frame (int bpf, int timeout, int *sz, int dl_layer_only)
-{
-  int len;
-  int dl_len;
-  char *frame = NULL;
-  char *ret = NULL;
-  struct timeval past, now, then;
-  struct timezone tz;
-
-  if (bpf < 0)
-    return NULL;
-
-  dl_len = get_datalink_size (bpf_datalink (bpf));
-  memset (&past, '\0', sizeof (past));
-  memset (&now, '\0', sizeof (now));
-  gettimeofday (&then, &tz);
-  for (;;)
-    {
-      memcpy (&past, &then, sizeof (then));
-      frame = (char *) bpf_next (bpf, &len);
-      if (frame != NULL)
-        break;
-      gettimeofday (&now, &tz);
-
-      if (now.tv_usec < past.tv_usec)
-        {
-          past.tv_sec++;
-          now.tv_usec += 1000000;
-        }
-
-      if (timeout > 0)
-        {
-          if ((now.tv_sec - past.tv_sec) >= timeout)
-            break;
-        }
-      else
-        break;
-    }
-
-  if (frame != NULL)
-    {
-      if (dl_layer_only == 1)
-        {
-          ret = g_malloc0 (dl_len);
-          memcpy (ret, frame, dl_len);
-          if (sz != NULL)
-            *sz = dl_len;
-        }
-      else
-        {
-          ret = g_malloc0 (len);
-          memcpy (ret, frame, len);
-          if (sz != NULL)
-            *sz = len;
-        }
-    }
-
-  return ret;
-}
-
 struct ip *
 capture_next_packet (int bpf, int timeout, int *sz)
 {
@@ -179,12 +109,12 @@ capture_next_packet (int bpf, int timeout, int *sz)
     return NULL;
 
   dl_len = get_datalink_size (bpf_datalink (bpf));
-  memset (&past, '\0', sizeof (past));
-  memset (&now, '\0', sizeof (now));
+  bzero (&past, sizeof (past));
+  bzero (&now, sizeof (now));
   gettimeofday (&then, &tz);
   for (;;)
     {
-      memcpy (&past, &then, sizeof (then));
+      bcopy (&then, &past, sizeof (then));
       packet = (char *) bpf_next (bpf, &len);
       if (packet != NULL)
         break;
@@ -208,7 +138,6 @@ capture_next_packet (int bpf, int timeout, int *sz)
   if (packet != NULL)
     {
       struct ip *ip;
-
       ip = (struct ip *) (packet + dl_len);
 #ifdef BSD_BYTE_ORDERING
       ip->ip_len = ntohs (ip->ip_len);
@@ -216,7 +145,7 @@ capture_next_packet (int bpf, int timeout, int *sz)
 #endif
       ip->ip_id = ntohs (ip->ip_id);
       ret = g_malloc0 (len - dl_len);
-      memcpy (ret, ip, len - dl_len);
+      bcopy (ip, ret, len - dl_len);
       if (sz != NULL)
         *sz = len - dl_len;
     }
@@ -293,13 +222,13 @@ capture_next_v6_packet (int bpf, int timeout, int *sz)
     return NULL;
 
   dl_len = get_datalink_size (bpf_datalink (bpf));
-  memset (&past, '\0', sizeof (past));
-  memset (&now, '\0', sizeof (now));
+  bzero (&past, sizeof (past));
+  bzero (&now, sizeof (now));
   gettimeofday (&then, &tz);
 
   for (;;)
     {
-      memcpy (&past, &then, sizeof (then));
+      bcopy (&then, &past, sizeof (then));
       packet = (char *) bpf_next (bpf, &len);
 
       if (packet != NULL)
@@ -329,7 +258,7 @@ capture_next_v6_packet (int bpf, int timeout, int *sz)
       ip6->ip6_plen = ntohs (ip6->ip6_plen);
 #endif
       ret = g_malloc0 (len - dl_len);
-      memcpy (ret, ip6, len - dl_len);
+      bcopy (ip6, ret, len - dl_len);
       if (sz != NULL)
         *sz = len - dl_len;
     }

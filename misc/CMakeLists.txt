@@ -28,8 +28,8 @@ endif (NOT PKG_CONFIG_FOUND)
 pkg_check_modules (GLIB REQUIRED glib-2.0>=2.42)
 pkg_check_modules (GNUTLS REQUIRED gnutls>=3.6.4)
 
-pkg_check_modules (LIBGVM_BASE REQUIRED libgvm_base>=21.4.1)
-pkg_check_modules (LIBGVM_UTIL REQUIRED libgvm_util>=21.4.1)
+pkg_check_modules (LIBGVM_BASE REQUIRED libgvm_base>=21.4)
+pkg_check_modules (LIBGVM_UTIL REQUIRED libgvm_util>=21.4)
 
 pkg_check_modules (OPENVAS_WMICLIENT libopenvas_wmiclient>=1.0.5)
 pkg_check_modules (OPENVAS_WINCMD libopenvas_wincmd>=1.0.5)
@@ -96,7 +96,7 @@ set (CMAKE_C_FLAGS              "${CMAKE_C_FLAGS} -Wall -Wextra -fPIC")
 # we require CMake >= 3.0
 set (MISC_VERSION_MAJOR 21)
 set (MISC_VERSION_MINOR 4)
-set (MISC_VERSION_PATCH 1)
+set (MISC_VERSION_PATCH 0)
 
 if (PROJECT_BETA_RELEASE)
   set (MISC_VERSION_SUFFIX "+beta${PROJECT_BETA_RELEASE}")

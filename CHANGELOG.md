@@ -4,59 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [21.4.3] - Unreleased - 2021-10-11
-### Added
-- Add nasl function sftp_enabled_check() to check if sftp subsystem is enabled in the target.
-  - Backport [#853](https://github.com/greenbone/openvas/pull/853)
-  - Backport [#862](https://github.com/greenbone/openvas/pull/862)
-  - Add `find_all` to eregmatch() nasl function [#875](https://github.com/greenbone/openvas/pull/875)
-- Fix Segmentation fault when freeing hosts and alive hosts [#888](https://github.com/greenbone/openvas/pull/888)
-
-### Changed
-- Changed defaults for installation locations [#826](https://github.com/greenbone/openvas-scanner/pull/826)
-  - SYSCONFDIR is /etc by default now
-  - LOCALSTATEDIR is /var by default now
-  - OPENVAS_RUN_DIR is /run/ospd by default now
-  - OPENVAS_FEED_LOCK_PATH is /var/lib/openvas/feed-update.lock by default now
-
-### Fixed
-- Fix interrupted scan, when the process table is full. [#832](https://github.com/greenbone/openvas-scanner/pull/832)
-- Use fchmod to change file permission instead of on open to prevent race conditions [854](https://github.com/greenbone/openvas-scanner/pull/854)
-- Fix plugins upload [#878](https://github.com/greenbone/openvas/pull/878)
-- Fix Error Message when NVTI chache init failed [#885](https://github.com/greenbone/openvas/pull/885)
-- Fix potential segfault.[#884](https://github.com/greenbone/openvas/pull/884)
-
-[21.4.3]: https://github.com/greenbone/openvas-scanner/compare/v21.4.2...stable
-
-## [21.4.2] - 2021-08-03
-### Fixed
-- Fix clang-analyzer warnings.
-  [#791](https://github.com/greenbone/openvas/pull/791)
-  [#795](https://github.com/greenbone/openvas/pull/795)
-
-[21.4.2]: https://github.com/greenbone/openvas-scanner/compare/v21.4.1...v21.4.2
-
-
-## [21.4.1] - 2021-06-23
-
-### Added
-- Improve nasl linter to catch more cases of undeclared variables. [#728](https://github.com/greenbone/openvas-scanner/pull/728)
-- Add deprecation warning for source_iface related settings which will be removed with the 21.10 release. [#732](https://github.com/greenbone/openvas-scanner/pull/732)
-- New Credentials for SSH to get su privileges. Backport of [#744](https://github.com/greenbone/openvas-scanner/pull/744). [#753](https://github.com/greenbone/openvas-scanner/pull/753)
-
-### Changed
-- Update default log config [#711](https://github.com/greenbone/openvas-scanner/pull/711)
-
-### Fixed
-- Use host from the original hosts list when boreas is enabled. [#725](https://github.com/greenbone/openvas/pull/725)
-- Initialize the the kb to store results for openvas-nasl [#735](https://github.com/greenbone/openvas/pull/735)
-- Fix unittest. Mock kb_lnk_reset. [#748](https://github.com/greenbone/openvas/pull/748)
-
-### Removed
-
-[21.4.1]: https://github.com/greenbone/openvas/compare/v21.4.1...stable
-
-## [21.4.0] - 2021-04-15
+## [21.04.0] (2021-04-15)
 
 ### Added
 - Add scanner-only option to enable tls debugging. [#558](https://github.com/greenbone/openvas/pull/558)
@@ -78,67 +26,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Removed
 - Use the nvticache name from gvm-libs, defined in nvticache.h. [#578](https://github.com/greenbone/openvas/pull/578)
 
-[21.4.0]: https://github.com/greenbone/openvas/compare/oldstable...v21.4.0
+[21.04.0]: https://github.com/greenbone/openvas/compare/openvas-20.08...v21.4.0
 
-
-## [20.8.4] (unreleased)
-### Added
-### Changed
-- Changed defaults for installation locations [#826](https://github.com/greenbone/openvas-scanner/pull/826)
-  - SYSCONFDIR is /etc by default now
-  - LOCALSTATEDIR is /var by default now
-  - OPENVAS_RUN_DIR is /run/ospd by default now
-  - OPENVAS_FEED_LOCK_PATH is /var/lib/openvas/feed-update.lock by default now
-
-### Deprecated
-### Removed
-### Fixed
-
-[20.8.4]: https://github.com/greenbone/openvas-scanner/compare/v20.8.3...oldstable
-
-## [20.8.3] - 2021-08-03
-### Fixed
-
-- Fix clang-analyzer warnings.
-  [#791](https://github.com/greenbone/openvas/pull/791)
-  [#795](https://github.com/greenbone/openvas/pull/795)
-
-[20.8.3]: https://github.com/greenbone/openvas/compare/v20.8.2...v20.8.3
-
-## [20.8.2] - 2021-06-23
+## [20.08.2] (unreleased)
 
 ### Added
 - Check for wrong names or values in the script_xrefs params.
   [#650](https://github.com/greenbone/openvas/pull/650)
   [#653](https://github.com/greenbone/openvas/pull/653)
-- Log a message if the scanner did not launch all plugins against a host.
-  [#700](https://github.com/greenbone/openvas/pull/700)
-  [#734](https://github.com/greenbone/openvas/pull/734)
+- Log a message if the scanner did not launch all plugins against a host. [#700](https://github.com/greenbone/openvas/pull/700)
 
 ### Changed
 - Replace bogus data with a better message and the vendor. [#665](https://github.com/greenbone/openvas/pull/665)
 - Improve log message for WMI connect failed or missing WMI support. [#670](https://github.com/greenbone/openvas/pull/670)
-- Don't use g_error. Use g_warning instead and let the scanner to continue. [#710](https://github.com/greenbone/openvas/pull/710)
-- Update COPYING file. [#750](https://github.com/greenbone/openvas/pull/750)
-- Set file permissions when syncing community feed [#769](https://github.com/greenbone/openvas-scanner/pull/769)
 
 ### Fixed
 - Fix issues discovered with clang compiler. [#654](https://github.com/greenbone/openvas/pull/654)
 - Fix gcc-9 and gcc-10 warnings. [#655](https://github.com/greenbone/openvas/pull/655)
 - Fix double free in nasl_cert_query. [#658](https://github.com/greenbone/openvas/pull/658)
 - Fix message to the client if there is a iface problem. [#695](https://github.com/greenbone/openvas/pull/695)
-- Fix SIGSEGV when no best route is found. [#702](https://github.com/greenbone/openvas/pull/702)
-- Fix host count when reverse_lookup_only is enabled. [#715](https://github.com/greenbone/openvas/pull/715)
-- Use host from the original hosts list when boreas is enabled. Backport of [PR #727](https://github.com/greenbone/openvas/pull/727). [#725](https://github.com/greenbone/openvas/pull/725)
-- The function description of nasl_ssh_shell_read() has been fixed. [#755](https://github.com/greenbone/openvas/pull/755)
 
 ### Removed
 - Remove code from the openvas daemon era. Do not flushall redis. [#689](https://github.com/greenbone/openvas/pull/689)
-- Remove deprecated option logfile. [#713](https://github.com/greenbone/openvas/pull/713)
 
-[20.8.2]: https://github.com/greenbone/openvas/compare/v20.8.1...v20.8.2
+[20.08.2]: https://github.com/greenbone/openvas/compare/v20.8.0...openvas-20.08
 
-## [20.8.1] - 2021-02-01
+## [20.08.1] (2021.02.01)
 
 ### Added
 - Extend nasl lint to detect if function parameter is used twice. [#590](https://github.com/greenbone/openvas/pull/590)
@@ -172,9 +85,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Fix technique switch for getting the appropriate interface to use for IPv6 dst addr. [#636](https://github.com/greenbone/openvas/pull/636)
 - Fix host count. Set to -1 when the target string is invalid. [#646](https://github.com/greenbone/openvas/pull/646)
 
-[20.8.1]: https://github.com/greenbone/openvas/compare/v20.8.0...v20.8.1
+[20.08.1]: https://github.com/greenbone/openvas/compare/v20.8.0...v20.8.1
 
-## [20.8.0] - 2020-08-11
+## [20.08] (2020-08-11)
 
 ### Added
 - Create greenbone-nvt-sync create lock file during feed sync.
@@ -232,7 +145,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Removed
 - Removed "network scan" mode. This includes removal of NASL API methods "scan_phase()" and "network_targets()". Sending a "network_mode=yes" in a scanner configuration will have no effect anymore. [#493](https://github.com/greenbone/openvas/pull/493)
 
-[20.8.0]: https://github.com/greenbone/openvas/compare/openvas-7.0...v20.8.0
+[20.08]: https://github.com/greenbone/openvas/compare/openvas-7.0...openvas-20.08
 
 ## [7.0.1]
 
@@ -299,7 +212,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 [7.0.0]: https://github.com/greenbone/openvas/compare/v6.0.1...v7.0.0
 
-## [6.0.1] - 2019-07-17
+## [6.0.2] (unreleased)
+
+### Changed
+- The call to wmiexec.py has been replaced with impacket-wmiexec, because the symlink has been added in Debian Stretch with python-impacket 0.9.15-1.
+
+[6.0.2]: https://github.com/greenbone/openvas/compare/v6.0.1...openvas-scanner-6.0
+
+## [6.0.1] (2019-07-17)
 
 ### Added
 
@@ -321,7 +241,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 [6.0.1]: https://github.com/greenbone/openvas/compare/v6.0.0...openvas-scanner-6.0
 
-## [6.0.0] - 2019-04-05
+## [6.0.0] (2019-04-05)
 
 ### Added
 - Function to get the currently running script filename has been added.
