@@ -28,4 +28,4 @@
 <!-- to check an item, place an "x" in the box like so: "- [x] Tests" -->
 
 - [ ] Tests
-- [ ] PR merge commit message adjusted
+- [ ] [CHANGELOG](https://github.com/greenbone/openvas/blob/master/CHANGELOG.md) Entry

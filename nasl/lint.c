@@ -47,24 +47,6 @@ typedef struct st_func_info
 
 char *nasl_name;
 
-int errors_cnt;
-void
-init_errors_cnt ()
-{
-  errors_cnt = 0;
-}
-void
-inc_errors_cnt ()
-{
-  errors_cnt++;
-  return;
-}
-int
-get_errors_cnt ()
-{
-  return errors_cnt;
-}
-
 /**
  * @brief Free a func_info structure.
  *
@@ -159,10 +141,10 @@ reverse_search (GSList **def_func_tree, GSList *finfo)
 gint
 list_cmp (gconstpointer lelem, gconstpointer data)
 {
-  if (!lelem || !data)
-    return -1;
+  if (data)
+    return (g_strcmp0 (lelem, data));
 
-  return (strcasecmp (lelem, data));
+  return -1;
 }
 
 /**
@@ -197,7 +179,6 @@ print_uncall_files (gpointer filename, gpointer lexic)
     {
       nasl_perror (lexic, "The included file '%s' is never used.",
                    (char *) filename);
-      inc_errors_cnt ();
       lexic = NULL;
     }
 }
@@ -435,13 +416,9 @@ nasl_lint_defvar (lex_ctxt *lexic, tree_cell *st, GHashTable **include_files,
        || st->type == NODE_PLUS_EQ)
       && defined_var_mode == 0)
     defined_var_mode = 1;
-  else if ((st->type == NODE_FUN_DEF || st->type == NODE_LOCAL
-            || st->type == NODE_FUN_CALL)
+  else if ((st->type == NODE_FUN_DEF || st->type == NODE_LOCAL)
            && defined_fn_mode == 0)
-    {
-      defined_fn_mode = 1;
-      defined_var_mode = 0;
-    }
+    defined_fn_mode = 1;
 
   else if (st->type == NODE_GLOBAL)
     def_glob_var = 1;
@@ -466,35 +443,18 @@ nasl_lint_defvar (lex_ctxt *lexic, tree_cell *st, GHashTable **include_files,
   else if (st->type == NODE_DECL && st->x.str_val != NULL)
     {
       if (defined_fn_mode == 1)
-        {
-          local_var_list = g_slist_prepend (local_var_list, st->x.str_val);
-        }
+        local_var_list = g_slist_prepend (local_var_list, st->x.str_val);
       if (def_glob_var == 1)
-        {
-          *defined_var = g_slist_prepend (*defined_var, st->x.str_val);
-        }
+        *defined_var = g_slist_prepend (*defined_var, st->x.str_val);
     }
   /* Special case foreach. */
   else if (st->type == NODE_FOREACH)
     {
-      // Hacky way of checking if we are in a function definition by checking
-      // if local_var_list is non empty. Otherwise all variables declared in a
-      // foreach call are considered file scope which leads to false negatives.
-      if (st->x.str_val != NULL && local_var_list != NULL)
-        {
-          local_var_list = g_slist_prepend (local_var_list, st->x.str_val);
-        }
-      else if (st->x.str_val != NULL)
-        {
-          *defined_var = g_slist_prepend (*defined_var, st->x.str_val);
-        }
+      if (st->x.str_val != NULL)
+        *defined_var = g_slist_prepend (*defined_var, st->x.str_val);
     }
-
   // The variable is used. It checks if the variable was defined
-  // Also check for NODE_ARRAY_EL to catch use of undeclared array.
-  // E.g "if(foo[0]) {}" and foo was not declared previously.
-  else if ((st->type == NODE_VAR || st->type == NODE_ARRAY_EL)
-           && defined_var_mode == 0)
+  else if (st->type == NODE_VAR && defined_var_mode == 0)
     {
       if (!g_slist_find_custom (*defined_var, st->x.str_val,
                                 (GCompareFunc) list_cmp)
@@ -504,7 +464,7 @@ nasl_lint_defvar (lex_ctxt *lexic, tree_cell *st, GHashTable **include_files,
           lexic->line_nb = st->line_nb;
           nasl_perror (lexic, "The variable %s was not declared",
                        st->x.str_val);
-          inc_errors_cnt ();
+          return NULL;
         }
     }
 
@@ -651,8 +611,7 @@ find_description_block (lex_ctxt *lexic, tree_cell *st)
  * @param[in] lexic nasl context.
  * @param[in] st structure tree of a nasl script.
  *
- * @return FAKE_CELL if no error was found, otherwise NULL or tree_cell which
- *  has number of errors as x.i_val.
+ * @return FAKE_CELL if no error was found, NULL otherwise.
  */
 tree_cell *
 nasl_lint (lex_ctxt *lexic, tree_cell *st)
@@ -667,7 +626,6 @@ nasl_lint (lex_ctxt *lexic, tree_cell *st)
   GSList *def_func_tree = NULL;
   gchar *err_fname = NULL;
   tree_cell *desc_block = FAKE_CELL;
-  init_errors_cnt ();
 
   nasl_name = g_strdup (nasl_get_filename (st->x.str_val));
   include_files =
@@ -686,10 +644,7 @@ nasl_lint (lex_ctxt *lexic, tree_cell *st)
   if (desc_block != NULL && desc_block != FAKE_CELL)
     /* FAKE_CELL if success, NULL otherwise which counts as error */
     if ((ret = check_description_block (lexic_aux, desc_block)) == NULL)
-      {
-        inc_errors_cnt ();
-        goto fail;
-      }
+      goto fail;
 
   /* Make a list of all called functions */
   make_call_func_list (lexic_aux, st, &called_funcs);
@@ -699,18 +654,12 @@ nasl_lint (lex_ctxt *lexic, tree_cell *st)
                             &func_fnames_tab, err_fname, &called_funcs,
                             &def_func_tree))
       == NULL)
-    {
-      inc_errors_cnt ();
-      goto fail;
-    }
+    goto fail;
   /* Check if a called function was defined. */
   if ((ret = nasl_lint_call (lexic_aux, st, &include_files, &func_fnames_tab,
                              err_fname, &called_funcs, &def_func_tree))
       == NULL)
-    {
-      inc_errors_cnt ();
-      goto fail;
-    }
+    goto fail;
 
   /* Check if the included files are used or not. */
   g_hash_table_foreach (include_files, (GHFunc) check_called_files,
@@ -729,10 +678,7 @@ nasl_lint (lex_ctxt *lexic, tree_cell *st)
          nasl_lint_def (lexic, st, lint_mode, &include_files, &func_fnames_tab,
                         err_fname, &called_funcs, &def_func_tree))
       == NULL)
-    {
-      inc_errors_cnt ();
-      goto fail;
-    }
+    goto fail;
 
   /* Check if a variable was declared. */
   GSList *defined_var = NULL;
@@ -755,12 +701,6 @@ fail:
   g_slist_free (unusedfiles);
   unusedfiles = NULL;
   free_lex_ctxt (lexic_aux);
-
-  if (get_errors_cnt () > 0)
-    {
-      ret = alloc_typed_cell (NODE_VAR);
-      ret->x.i_val = get_errors_cnt ();
-    }
 
   return ret;
 }

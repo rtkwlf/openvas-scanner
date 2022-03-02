@@ -398,22 +398,20 @@ tree_cell *
 nasl_tolower (lex_ctxt *lexic)
 {
   tree_cell *retc;
-  char *str = get_str_var_by_num (lexic, 0), *ret;
+  char *str = get_str_var_by_num (lexic, 0);
   int str_len = get_var_size_by_num (lexic, 0);
   int i;
 
   if (str == NULL)
     return NULL;
 
-  ret = g_malloc0 (str_len + 1);
-  memcpy (ret, str, str_len + 1);
-
+  str = g_memdup (str, str_len + 1);
   for (i = 0; i < str_len; i++)
-    ret[i] = tolower (ret[i]);
+    str[i] = tolower (str[i]);
 
   retc = alloc_typed_cell (CONST_DATA);
   retc->size = str_len;
-  retc->x.str_val = ret;
+  retc->x.str_val = str;
   return retc;
 }
 
@@ -422,22 +420,20 @@ tree_cell *
 nasl_toupper (lex_ctxt *lexic)
 {
   tree_cell *retc;
-  char *str = get_str_var_by_num (lexic, 0), *ret;
+  char *str = get_str_var_by_num (lexic, 0);
   int str_len = get_var_size_by_num (lexic, 0);
   int i;
 
   if (str == NULL)
     return NULL;
 
-  ret = g_malloc0 (str_len + 1);
-  memcpy (ret, str, str_len + 1);
-
+  str = g_memdup (str, str_len + 1);
   for (i = 0; i < str_len; i++)
-    ret[i] = toupper (ret[i]);
+    str[i] = toupper (str[i]);
 
   retc = alloc_typed_cell (CONST_DATA);
   retc->size = str_len;
-  retc->x.str_val = ret;
+  retc->x.str_val = str;
   return retc;
 }
 
@@ -546,7 +542,6 @@ _regreplace (const char *pattern, const char *replace, const char *string,
 
       if (err && err != REG_NOMATCH)
         {
-          g_free (buf);
           return (NULL);
         }
       if (!err)
@@ -730,7 +725,6 @@ nasl_egrep (lex_ctxt *lexic)
           {
             nasl_perror (
               lexic, "egrep() : regcomp() failed for pattern '%s'.\n", pattern);
-            g_free (rets);
             return NULL;
           }
 
@@ -790,21 +784,8 @@ nasl_egrep (lex_ctxt *lexic)
 
 /**
  * @brief Does extended regular expression pattern matching.
- * @naslfn{eregmatch}
  *
- * @nasluparam
- *
- * - @a pattern An regex pattern
- * - @a string A string
- * - @a icase Boolean, for case sensitve
- * - @a find_all Boolean, to find all matches
- *
- * @naslret An array with the first match (find_all: False)
- *          or an array with all matches (find_all: TRUE).
- *          NULL or empty if no match was found.
- *
- * @param[in] lexic Lexical context of NASL interpreter.
- *
+ * In NASL, this function returns an array.
  */
 tree_cell *
 nasl_eregmatch (lex_ctxt *lexic)
@@ -812,8 +793,7 @@ nasl_eregmatch (lex_ctxt *lexic)
   char *pattern = get_str_var_by_name (lexic, "pattern");
   char *string = get_str_var_by_name (lexic, "string");
   int icase = get_int_var_by_name (lexic, "icase", 0);
-  int find_all = get_int_var_by_name (lexic, "find_all", 0);
-  int copt = 0;
+  int copt = 0, i;
   tree_cell *retc;
   regex_t re;
   regmatch_t subs[NS];
@@ -832,63 +812,24 @@ nasl_eregmatch (lex_ctxt *lexic)
                    pattern);
       return NULL;
     }
+
+  if (regexec (&re, string, (size_t) NS, subs, 0) != 0)
+    {
+      regfree (&re);
+      return NULL;
+    }
+
   retc = alloc_typed_cell (DYN_ARRAY);
   retc->x.ref_val = a = g_malloc0 (sizeof (nasl_array));
 
-  if (find_all == 0)
-    {
-      if (regexec (&re, string, (size_t) NS, subs, 0) != 0)
-        {
-          regfree (&re);
-          return NULL;
-        }
-
-      int i;
-      for (i = 0; i < NS; i++)
-        if (subs[i].rm_so != -1)
-          {
-            v.var_type = VAR2_DATA;
-            v.v.v_str.s_siz = subs[i].rm_eo - subs[i].rm_so;
-            v.v.v_str.s_val = (unsigned char *) string + subs[i].rm_so;
-            (void) add_var_to_list (a, i, &v);
-          }
-    }
-  else
-    {
-      int index = 0;
-      char *current_pos;
-      current_pos = string;
-      while (1)
-        {
-          if (regexec (&re, current_pos, (size_t) NS, subs, 0) != 0)
-            {
-              regfree (&re);
-              break;
-            }
-
-          unsigned int offset = 0, i = 0;
-          for (i = 0; i < NS; i++)
-            {
-              char current_pos_cp[strlen (current_pos) + 1];
-
-              if (subs[i].rm_so == -1)
-                break;
-
-              if (i == 0)
-                offset = subs[i].rm_eo;
-
-              strcpy (current_pos_cp, current_pos);
-              current_pos_cp[subs[i].rm_eo] = 0;
-              v.var_type = VAR2_DATA;
-              v.v.v_str.s_siz = subs[i].rm_eo - subs[i].rm_so;
-              v.v.v_str.s_val =
-                (unsigned char *) current_pos_cp + subs[i].rm_so;
-              (void) add_var_to_list (a, index, &v);
-              index++;
-            }
-          current_pos += offset;
-        }
-    }
+  for (i = 0; i < NS; i++)
+    if (subs[i].rm_so != -1)
+      {
+        v.var_type = VAR2_DATA;
+        v.v.v_str.s_siz = subs[i].rm_eo - subs[i].rm_so;
+        v.v.v_str.s_val = (unsigned char *) string + subs[i].rm_so;
+        (void) add_var_to_list (a, i, &v);
+      }
 
   regfree (&re);
   return retc;
@@ -1252,9 +1193,7 @@ nasl_strstr (lex_ctxt *lexic)
 
   retc = alloc_typed_cell (CONST_DATA);
   retc->size = sz_a - (c - a);
-  retc->x.str_val = g_malloc0 (retc->size + 1);
-  memcpy (retc->x.str_val, c, retc->size + 1);
-
+  retc->x.str_val = g_memdup (c, retc->size + 1);
   return retc;
 }
 

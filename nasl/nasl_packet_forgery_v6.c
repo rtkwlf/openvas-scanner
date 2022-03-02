@@ -1766,6 +1766,7 @@ forge_icmp_v6_packet (lex_ctxt *lexic)
 
       bcopy (ip6, ip6_icmp, ip6_sz);
       p = (char *) (pkt + ip6_sz);
+
       icmp = (struct icmp6_hdr *) p;
 
       icmp->icmp6_code = get_int_var_by_name (lexic, "icmp_code", 0);
@@ -1785,34 +1786,39 @@ forge_icmp_v6_packet (lex_ctxt *lexic)
           break;
         case ND_ROUTER_SOLICIT:
           {
+            if (data != NULL)
+              bcopy (data, &(p[8]), len);
+            routersolicit = g_malloc0 (sizeof (struct nd_router_solicit));
             pkt =
               g_realloc (pkt, ip6_sz + sizeof (struct nd_router_solicit) + len);
-            p = (char *) (pkt + ip6_sz);
-            // Update ip6_icmp because it gets used again below
             ip6_icmp = (struct ip6_hdr *) pkt;
+            p = (char *) (pkt + ip6_sz);
+            struct icmp6_hdr *rs = &routersolicit->nd_rs_hdr;
             routersolicit = (struct nd_router_solicit *) p;
-            ((struct icmp6_hdr *) routersolicit)->icmp6_type = icmp->icmp6_type;
-            ((struct icmp6_hdr *) routersolicit)->icmp6_code = icmp->icmp6_code;
-            ((struct icmp6_hdr *) routersolicit)->icmp6_cksum =
-              icmp->icmp6_cksum;
+            rs->icmp6_type = icmp->icmp6_type;
+            rs->icmp6_code = icmp->icmp6_code;
+            rs->icmp6_cksum = icmp->icmp6_cksum;
             size = ip6_sz + sizeof (struct nd_router_solicit) + len;
             sz = 4; /*type-1 byte, code-1byte, cksum-2bytes */
           }
           break;
         case ND_ROUTER_ADVERT:
           {
-            pkt =
-              g_realloc (pkt, ip6_sz + sizeof (struct nd_router_advert) + len);
-            p = (char *) (pkt + ip6_sz);
-            // Update ip6_icmp because it gets used again below
+            if (data != NULL)
+              bcopy (data, &(p[8]), len);
+            routeradvert = g_malloc0 (sizeof (struct nd_router_advert));
+            /*do we need lifetime?? Not taking lifetime?? */
+            pkt = g_realloc (
+              pkt,
+              ip6_sz + sizeof (struct nd_router_advert) - 8
+                + len); /*not taking lifetime(8 bytes) into consideration */
             ip6_icmp = (struct ip6_hdr *) pkt;
-            // Let routeradvert point to routeradvert location in pkt
+            p = (char *) (pkt + ip6_sz);
+            struct icmp6_hdr *ra = &routeradvert->nd_ra_hdr;
             routeradvert = (struct nd_router_advert *) p;
-            // Set icmp6 header members
-            ((struct icmp6_hdr *) routeradvert)->icmp6_type = icmp->icmp6_type;
-            ((struct icmp6_hdr *) routeradvert)->icmp6_code = icmp->icmp6_code;
-            ((struct icmp6_hdr *) routeradvert)->icmp6_cksum =
-              icmp->icmp6_cksum;
+            ra->icmp6_type = icmp->icmp6_type;
+            ra->icmp6_code = icmp->icmp6_code;
+            ra->icmp6_cksum = icmp->icmp6_cksum;
             routeradvert->nd_ra_reachable =
               get_int_var_by_name (lexic, "reachable_time", 0);
             routeradvert->nd_ra_retransmit =
@@ -1820,33 +1826,26 @@ forge_icmp_v6_packet (lex_ctxt *lexic)
             routeradvert->nd_ra_curhoplimit = ip6_icmp->ip6_hlim;
             routeradvert->nd_ra_flags_reserved =
               get_int_var_by_name (lexic, "flags", 0);
-            size = ip6_sz + sizeof (struct nd_router_advert) + len;
-            sz = 5; /*type-1 byte, code-1byte, cksum-2bytes, current
-                       hoplimit-1byte */
+            size = ip6_sz + sizeof (struct nd_router_advert) - 8
+                   + len; /*not taking lifetime(8 bytes) into consideration */
+            sz = 5;       /*type-1 byte, code-1byte, cksum-2bytes, current
+                             hoplimit-1byte */
           }
           break;
         case ND_NEIGHBOR_SOLICIT:
           {
-            // Make room for nd_neighbor_solicit.nd_ns_target in packet
+            neighborsolicit = g_malloc0 (sizeof (struct nd_neighbor_solicit));
             pkt = g_realloc (pkt, ip6_sz + sizeof (struct nd_neighbor_solicit)
                                     + len);
-            // Let p point to the start of nd_neighbor_solicit
-            p = (char *) (pkt + ip6_sz);
-            // Update ip6_icmp because it gets used again below
             ip6_icmp = (struct ip6_hdr *) pkt;
-            // Fill in user date if provided
-            if (data != NULL)
-              memmove (&(p[8 + 16]), data, len);
-            // Let neighborsolicit point to nd_neighbor_solicit location in pkt
+            p = (char *) (pkt + ip6_sz);
+            struct icmp6_hdr *ns = &neighborsolicit->nd_ns_hdr;
             neighborsolicit = (struct nd_neighbor_solicit *) p;
-            // Set icmp6 header members
-            ((struct icmp6_hdr *) neighborsolicit)->icmp6_type =
-              icmp->icmp6_type;
-            ((struct icmp6_hdr *) neighborsolicit)->icmp6_code =
-              icmp->icmp6_code;
-            ((struct icmp6_hdr *) neighborsolicit)->icmp6_cksum =
-              icmp->icmp6_cksum;
-            // Set nd_ns_target
+            if (data != NULL)
+              bcopy (data, &(p[24]), len);
+            ns->icmp6_type = icmp->icmp6_type;
+            ns->icmp6_code = icmp->icmp6_code;
+            ns->icmp6_cksum = icmp->icmp6_cksum;
             memcpy (&neighborsolicit->nd_ns_target, &ip6_icmp->ip6_dst,
                     sizeof (struct in6_addr)); /*dst ip should be link local */
             size = ip6_sz + sizeof (struct nd_neighbor_solicit) + len;
@@ -1855,19 +1854,16 @@ forge_icmp_v6_packet (lex_ctxt *lexic)
           break;
         case ND_NEIGHBOR_ADVERT:
           {
+            neighboradvert = g_malloc0 (sizeof (struct nd_neighbor_advert));
             pkt = g_realloc (pkt,
                              ip6_sz + sizeof (struct nd_neighbor_advert) + len);
-            // Update ip6_icmp because it gets used again below
             ip6_icmp = (struct ip6_hdr *) pkt;
             p = (char *) (pkt + 40);
+            struct icmp6_hdr *na = &neighboradvert->nd_na_hdr;
             neighboradvert = (struct nd_neighbor_advert *) p;
-            // Set icmp6 header members
-            ((struct icmp6_hdr *) neighboradvert)->icmp6_type =
-              icmp->icmp6_type;
-            ((struct icmp6_hdr *) neighboradvert)->icmp6_code =
-              icmp->icmp6_code;
-            ((struct icmp6_hdr *) neighboradvert)->icmp6_cksum =
-              icmp->icmp6_cksum;
+            na->icmp6_type = icmp->icmp6_type;
+            na->icmp6_code = icmp->icmp6_code;
+            na->icmp6_cksum = icmp->icmp6_cksum;
             neighboradvert->nd_na_flags_reserved =
               get_int_var_by_name (lexic, "flags", 0);
             if (neighboradvert->nd_na_flags_reserved & 0x00000020)
@@ -2025,10 +2021,7 @@ get_icmp_v6_element (lex_ctxt *lexic)
           retc = alloc_typed_cell (CONST_DATA);
           retc->size = get_var_size_by_name (lexic, "icmp") - 40 - 8;
           if (retc->size > 0)
-            {
-              retc->x.str_val = g_malloc0 (retc->size + 1);
-              memcpy (retc->x.str_val, &(p[40 + 8]), retc->size + 1);
-            }
+            retc->x.str_val = g_memdup (&(p[40 + 8]), retc->size + 1);
           else
             {
               retc->x.str_val = NULL;
